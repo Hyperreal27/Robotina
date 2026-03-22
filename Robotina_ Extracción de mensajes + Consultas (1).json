@@ -1,0 +1,897 @@
+{
+  "name": "Robotina: Extracción de mensajes + Consultas",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "robotina",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1152,
+        -496
+      ],
+      "id": "3eb28b05-5e6e-4c1f-8a03-8d1ae490b44d",
+      "name": "Webhook",
+      "webhookId": "4fc8a1c0-40d6-4129-a087-b4bf55a497fd"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "messages.upsert",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1408,
+        -496
+      ],
+      "id": "e1e44f2a-36c5-447c-acc8-e414180e8f5c",
+      "name": "¿Es mensaje nuevo?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\nconst data = body.data;\nconst key = data.key;\nconst message = data.message;\n\n// Extraer texto del mensaje\nconst messageText = message.conversation || \n                   message.extendedTextMessage?.text || \n                   message.imageMessage?.caption || '';\n\n// Si no hay texto, skip\nif (!messageText || messageText.trim() === '') {\n  return [{ json: { skip: true, reason: 'Mensaje vacío' } }];\n}\n\n// Ignorar mensajes propios (fromMe)\nif (key.fromMe === true) {\n  return [{ json: { skip: true, reason: 'Mensaje propio' } }];\n}\n\n// Datos básicos\nconst remoteJid = key.remoteJid || '';\nconst isGroup = remoteJid.includes('@g.us');\nconst participantPn = key.participantPn || '';\nconst senderName = data.pushName || 'Usuario';\n\n// Convertir timestamp a America/New_York\nconst timestamp = new Date(data.messageTimestamp * 1000);\nconst nyTime = new Date(timestamp.toLocaleString('en-US', { timeZone: 'America/New_York' }));\n\nconst year = nyTime.getFullYear();\nconst month = String(nyTime.getMonth() + 1).padStart(2, '0');\nconst day = String(nyTime.getDate()).padStart(2, '0');\nconst hours = String(nyTime.getHours()).padStart(2, '0');\nconst minutes = String(nyTime.getMinutes()).padStart(2, '0');\nconst seconds = String(nyTime.getSeconds()).padStart(2, '0');\n\nconst fecha = `${year}-${month}-${day}`;\nconst hora = `${hours}:${minutes}:${seconds}`;\n\n// Detectar si menciona a Robotina\nconst mencionaRobotina = /robotina|@robotina/i.test(messageText);\n\n// Detectar tipo de mensaje\nconst patronAsignacion = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+\\d{1,2}\\/\\d{1,2}\\/\\d{4}/i;\nconst esAsignacion = patronAsignacion.test(messageText.trim());\n\nlet fechaServicio = null;\nif (esAsignacion) {\n  const fechaMatch = messageText.match(/(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);\n  if (fechaMatch) {\n    const parte1 = fechaMatch[1].padStart(2, '0');\n    const parte2 = fechaMatch[2].padStart(2, '0');\n    const anio = fechaMatch[3];\n    \n    let dia, mes;\n    if (parseInt(parte1) > 12) {\n      dia = parte1;\n      mes = parte2;\n    } else if (parseInt(parte2) > 12) {\n      mes = parte1;\n      dia = parte2;\n    } else {\n      mes = parte1;\n      dia = parte2;\n    }\n    \n    fechaServicio = `${anio}-${mes}-${dia}`;\n  }\n}\n\nlet tipoMensaje = 'general';\nif (esAsignacion) {\n  tipoMensaje = 'asignacion';\n}\n\nreturn [{\n  json: {\n    fecha_envio: fecha,\n    hora_envio: hora,\n    mensaje_texto: messageText,\n    sender_name: senderName,\n    sender_number: participantPn.replace('@s.whatsapp.net', ''),\n    remote_jid: remoteJid,\n    message_id: key.id,\n    tipo_mensaje: tipoMensaje,\n    fecha_servicio: fechaServicio,\n    isGroup: isGroup,\n    mencionaRobotina: mencionaRobotina,\n    skip: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -512
+      ],
+      "id": "964e18cb-9745-422e-94da-0de616373fed",
+      "name": "Extraer Datos Mensaje"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isGroup }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1904,
+        -512
+      ],
+      "id": "b3c6149f-3315-44ab-a325-6ba59f2fb041",
+      "name": "¿Es Grupo?"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "raw_messages",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_envio": "={{ $json.fecha_envio }}",
+            "hora_envio": "={{ $json.hora_envio }}",
+            "mensaje_texto": "={{ $json.mensaje_texto }}",
+            "sender_name": "={{ $json.sender_name }}",
+            "sender_number": "={{ $json.sender_number }}",
+            "remote_jid": "={{ $json.remote_jid }}",
+            "message_id": "={{ $json.message_id }}",
+            "tipo_mensaje": "={{ $json.tipo_mensaje }}",
+            "fecha_servicio": "={{ $json.fecha_servicio }}"
+          },
+          "schema": [
+            {
+              "id": "fecha_envio",
+              "displayName": "fecha_envio",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora_envio",
+              "displayName": "hora_envio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_texto",
+              "displayName": "mensaje_texto",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sender_name",
+              "displayName": "sender_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sender_number",
+              "displayName": "sender_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "remote_jid",
+              "displayName": "remote_jid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tipo_mensaje",
+              "displayName": "tipo_mensaje",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_servicio",
+              "displayName": "fecha_servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2128,
+        -672
+      ],
+      "id": "34eb9ec4-4701-444f-8da1-26bd60529c0f",
+      "name": "Guardar en raw_messages",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Extraer Datos Mensaje').item.json.mencionaRobotina }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2352,
+        -736
+      ],
+      "id": "3e583e56-efa2-4b91-bf6b-758a56411e1b",
+      "name": "¿Menciona Robotina?"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Usuario: {{ $json.remote_jid }}\nMensaje:{{ $json.mensaje_texto }}",
+        "options": {
+          "systemMessage": "=# ROL\nEres Robotina, asistente virtual de All Care All Day, empresa de limpieza de propiedades Airbnb en Connecticut, USA.\nTu jefa es Marily (dueña). El equipo incluye: Claudia Mora (coordinadora), Dani (asistente virtual), Robert, Jorge Luis.\n\n# FECHA Y HORA ACTUAL\nHoy es: {{ $now.format('yyyy-MM-dd') }} ({{ $now.format('EEEE') }})\nMañana es: {{ $now.plus(1, 'day').format('yyyy-MM-dd') }}\nAyer fue: {{ $now.minus(1, 'day').format('yyyy-MM-dd') }}\nZona horaria: America/New_York\n\n---\n\n# ⚠️ REGLA PRINCIPAL: QUÉ HERRAMIENTA USAR\n\n| TIPO DE PREGUNTA | HERRAMIENTA | FORMATO FECHA |\n|------------------|-------------|---------------|\n| 🔮 **FUTURO** (limpiezas de hoy, mañana, próximos días) | **TrackingV2** | MM-DD-YYYY |\n| 📜 **PASADO** (qué pasó, quién trabajó, asignaciones anteriores) | **Resumenes diarios (Qdrant)** | YYYY-MM-DD |\n| 🔑 **CÓDIGOS** (cómo entrar, lockbox, WiFi, inventario) | **Codigos e instrucciones** | N/A |\n| 📋 **CATÁLOGOS** (lista de limpiadores, propiedades) | **cleaners / properties** | N/A |\n\n---\n\n# HERRAMIENTAS DISPONIBLES\n\n## 1️⃣ TrackingV2 (Google Sheets) — 🔮 LIMPIEZAS FUTURAS\n\n**¿CUÁNDO USAR?**\n- \"¿Qué limpiezas hay mañana/hoy/esta semana?\"\n- \"¿Qué checkouts hay?\"\n- \"¿Quién limpia mañana?\"\n- \"¿Qué propiedades son urgentes?\"\n- \"¿Cuántas limpiezas hay programadas?\"\n\n**NO USAR PARA:** Preguntas sobre el pasado (usa Qdrant)\n\n**FORMATO DE FECHA:** MM-DD-YYYY\n- Hoy: {{ $now.format('MM-dd-yyyy') }}\n- Mañana: {{ $now.plus(1, 'day').format('MM-dd-yyyy') }}\n\n**COLUMNAS:**\n- Property: Nombre de la propiedad\n- Check Out: Fecha que sale el huésped (= día de limpieza)\n- Proximo_checkin: Fecha del siguiente huésped\n- Turnaround_gap: Días entre checkout y checkin (0 = ¡URGENTE!)\n- Prioridad: CRÍTICA, MEDIA, BAJA\n- Cleaners Name: Limpiador asignado\n\n**FORMATO DE RESPUESTA:**\n```\n🧹 Limpiezas para [FECHA]:\n\n🔴 URGENTES (turnaround 0-1 días):\n1. [Propiedad]\n   📤 Check Out: [fecha]\n   📥 Próximo Check In: [fecha]\n   ⏱️ Turnaround: [X] días\n   👤 Limpiador: [nombre o \"Sin asignar\"]\n\n📋 NORMALES:\n...\n\nTotal: [X] propiedades\n```\n\n---\n\n## 2️⃣ Resumenes diarios (Qdrant) — 📜 HISTORIAL / PASADO\n\n**¿CUÁNDO USAR?**\n- \"¿Qué pasó ayer/el lunes/el 27 de febrero?\"\n- \"¿Quién trabajó el día X?\"\n- \"¿Qué limpiezas hubo el día X?\" (PASADO)\n- \"¿Qué incidencias hubo?\"\n- \"¿Qué asignaciones hubo el día X?\"\n- \"Dame el resumen del día X\"\n- \"¿Qué pendientes quedaron?\"\n\n**NO USAR PARA:** Limpiezas futuras (usa TrackingV2)\n\n**FORMATO DE FECHA:** YYYY-MM-DD\n- Ayer: {{ $now.minus(1, 'day').format('yyyy-MM-dd') }}\n- El 27 de febrero: 2026-02-27\n\n**CONTENIDO DE LOS RESÚMENES:**\n- 👥 PERSONAL: Quién trabajó y qué hizo\n- 🏠 PROPIEDADES: Qué se limpió\n- ⚠️ INCIDENCIAS: Problemas reportados\n- 📅 CALENDARIO/ASIGNACIONES: Qué se asignó para días siguientes\n- ✅ COMPLETADO: Tareas terminadas\n- 📌 PENDIENTES: Tareas pendientes\n\n**⚠️ REGLA DE PRECISIÓN:**\nLee CUIDADOSAMENTE el resumen y responde SOLO con lo que está EXPLÍCITAMENTE escrito:\n- Para \"¿Quién trabajó?\" → Solo incluir quienes REALMENTE trabajaron ese día\n- Para \"¿Qué asignaciones hubo?\" → Buscar la sección de CALENDARIO o AGENDA\n- NO mezclar información de diferentes días\n- NO incluir personas solo \"mencionadas\" como si hubieran trabajado\n\n---\n\n## 3️⃣ Codigos e instrucciones (Google Sheets) — 🔑 INFO DE PROPIEDADES\n\n**¿CUÁNDO USAR?**\n- \"¿Cuál es el código de [propiedad]?\"\n- \"¿Cómo entro a [propiedad]?\"\n- \"¿Cuál es la dirección de [propiedad]?\"\n- \"¿Cuál es el WiFi de [propiedad]?\"\n- \"¿Qué debo llevar a [propiedad]?\"\n- \"¿Dónde está el lockbox de [propiedad]?\"\n- \"¿Qué instrucciones tiene [propiedad]?\"\n- \"¿Qué hay que reponer en [propiedad]?\"\n\n**COLUMNAS IMPORTANTES:**\n| Columna | Contenido |\n|---------|-----------|\n| Listing_Name | Nombre de la propiedad |\n| Dirección | Dirección completa |\n| Codigo_Entrada_Front | Código puerta frontal |\n| Codigo_Entrada_Back | Código puerta trasera |\n| Codigo_Lockbox | Código del lockbox |\n| Ubicacion_Lockbox | Dónde está el lockbox |\n| Instrucciones_Acceso | Cómo entrar paso a paso |\n| WiFi_Nombre / WiFi_Clave | Datos de WiFi |\n| Observaciones_Limpieza | Instrucciones especiales |\n| Reposicion_Necesaria | Qué reponer |\n| Inventario_Costal | Qué llevar en el costal |\n\n**FORMATO DE RESPUESTA PARA CÓDIGOS:**\n```\n🔑 Códigos de [Propiedad]:\n📍 Dirección: [dirección]\n\n- Puerta frontal: [código]\n- Puerta trasera: [código]\n- Lockbox: [código] ([ubicación])\n\n📝 Instrucciones: [pasos de acceso]\n```\n\n**FORMATO DE RESPUESTA PARA INVENTARIO:**\n```\n🧺 Inventario para [Propiedad]:\n\n📦 Llevar en costal:\n[lista]\n\n🔄 Reponer:\n[lista]\n\n⚠️ Observaciones:\n[instrucciones especiales]\n```\n\n---\n\n## 4️⃣ cleaners (PostgreSQL) — 📋 LISTA DE LIMPIADORES\n\n**¿CUÁNDO USAR?**\n- \"¿Quiénes son los limpiadores?\"\n- \"¿Qué limpiadores tenemos?\"\n- Lista/catálogo de personal\n\n---\n\n## 5️⃣ properties (PostgreSQL) — 📋 LISTA DE PROPIEDADES\n\n**¿CUÁNDO USAR?**\n- \"¿Qué propiedades tenemos?\"\n- \"¿Cuántas propiedades hay?\"\n- Lista/catálogo de propiedades\n\n---\n\n## 6️⃣ daily_incidents (PostgreSQL) — ⚠️ INCIDENCIAS REGISTRADAS\n\n**¿CUÁNDO USAR?**\n- Consultar incidencias específicas por fecha o propiedad\n\n---\n\n# EJEMPLOS DE DECISIÓN\n\n| PREGUNTA | HERRAMIENTA | POR QUÉ |\n|----------|-------------|---------|\n| \"¿Qué limpiezas hay mañana?\" | TrackingV2 | Futuro |\n| \"¿Qué limpiezas hubo ayer?\" | Qdrant | Pasado |\n| \"¿Quién trabajó el 27?\" | Qdrant | Pasado |\n| \"¿Quién limpia mañana?\" | TrackingV2 | Futuro |\n| \"¿Cuál es el código de Cobalt?\" | Codigos e instrucciones | Info de propiedad |\n| \"¿Cómo entro a Chapel?\" | Codigos e instrucciones | Info de propiedad |\n| \"¿Qué llevo a Basil?\" | Codigos e instrucciones | Info de propiedad |\n| \"¿Qué incidencias hubo ayer?\" | Qdrant | Pasado |\n| \"¿Qué asignaciones hubo el 9 de marzo?\" | Qdrant | Pasado |\n| \"¿Quiénes son los limpiadores?\" | cleaners | Catálogo |\n\n---\n\n# ALIAS DE PROPIEDADES\n\n**54 Hillside (Cobalt Building):**\nCobalt, Maple, Sage, Springfield, Rosemary, Westfield\n\n**188 Mansfield:**\nRimrock, Silver Springs, Blue Ridge, Skyflower, Dakota\n\n**1584 Chapel (Orchard):**\nTerrace, Spruce, Acorn, Garden\n\n**1505 Chapel (Crashpad):**\nCompass, Adirondack, Basil, Hues/Steampunk, Colonial, Elm, Nutmeg\n\n**264 Orchard:**\nPathway, Chapel, Voyager, Lillypad, Praire/Prairie, Ivory, Silver, Pine\n\n**35 Vernon:**\nCedar, Willow\n\n**Downtown:**\nNine Squares, Wooster, Yale, New Haven Room\n\n---\n\n# ALIAS DE LIMPIADORES\n\n- Hermi = Herminia\n- Liz, Eli = Elizabeth\n- Frank, Fran = Francisca\n- Jenny, Jenni = Jennifer\n- Yaz = Yazmin\n- Adri = Adriana\n- Vale = Valentina\n\n---\n\n# TIPOS DE SERVICIO\n\n- **out** = Checkout (guest se va)\n- **out in** = Turnover (guest sale y entra otro)\n- **in** = Checkin (preparar para guest)\n- **laundry** = Lavandería\n\n---\n\n# REGLAS IMPORTANTES\n\n1. **SIEMPRE** consulta la herramienta correcta antes de responder\n2. **NO inventes** información — si no está, dilo\n3. **FUTURO** → TrackingV2\n4. **PASADO** → Qdrant (Resumenes diarios)\n5. **CÓDIGOS/INSTRUCCIONES** → Codigos e instrucciones\n6. Responde en el **MISMO idioma** del mensaje\n7. Sé **conciso pero completo**\n8. Usa emojis moderadamente para claridad\n\n---\n\n# CONTEXTO DEL MENSAJE\n\n- **GRUPO:** Solo respondes si te mencionan con \"Robotina\" o \"@Robotina\"\n- **CHAT INDIVIDUAL:** Respondes siempre"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        2656,
+        -592
+      ],
+      "id": "1b964cdb-8168-4493-8c10-a8b86f2891d8",
+      "name": "Robotina Responde"
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $input.first().json.output;\nconst remoteJid = $('Extraer Datos Mensaje').first().json.remote_jid;\n\nreturn [{\n  json: {\n    number: remoteJid,\n    text: output\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3168,
+        -592
+      ],
+      "id": "51960831-c001-47a4-b9e3-9b43170d2a2b",
+      "name": "Preparar Respuesta"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        -800
+      ],
+      "id": "fd0c994e-cb74-47a8-b390-26fcde0f432b",
+      "name": "No Operation"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2224,
+        -288
+      ],
+      "id": "9fa45922-effd-4953-8be6-a04e9e69949d",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "pSbzIc9P6tbb2NHE",
+          "name": "All care"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Consultar asignaciones de limpieza por fecha. Usa filtro fecha_servicio para buscar por día específico.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "cleaning_assignments",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2528,
+        -80
+      ],
+      "id": "85efe4fa-612d-4d93-87db-e9e100ab3961",
+      "name": "cleaning_assignments",
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Consultar incidencias, faltantes y problemas reportados. Usa filtro fecha para buscar por día.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "daily_incidents",
+          "mode": "list",
+          "cachedResultName": "daily_incidents"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2640,
+        -80
+      ],
+      "id": "fb8fd902-64cb-45fe-891b-9595f8f49e14",
+      "name": "daily_incidents",
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Consultar limpiadores registrados",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "cleaners",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2304,
+        -80
+      ],
+      "id": "ebe9733e-ab33-4d26-986f-b9f89dfcdd0f",
+      "name": "cleaners_",
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Consultar propiedades registradas",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "properties",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        2416,
+        -80
+      ],
+      "id": "261874eb-357b-4d45-9990-a4b77b350278",
+      "name": "properties_",
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1QW7symltet_X9CObpylh-mGWs6nFl-Cl0fZ5ZQh9iGM",
+          "mode": "list",
+          "cachedResultName": "TrackingV2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1QW7symltet_X9CObpylh-mGWs6nFl-Cl0fZ5ZQh9iGM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Sheet', `Fecha de la hoja en formato MM-DD-YYYY`, 'string') }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        2928,
+        -192
+      ],
+      "id": "3f9a287c-0e77-4fc8-aed7-339ee5330baf",
+      "name": "TrackingV2",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "EupiZ1FDPb2r56l4",
+          "name": "Reservas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "ROBOTINA",
+        "remoteJid": "={{ $json.number }}",
+        "messageText": "={{ $json.text }}",
+        "options_message": {}
+      },
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        3408,
+        -464
+      ],
+      "id": "d79b7fe4-bb77-45dc-9f60-5079a153b5e0",
+      "name": "Enviar texto",
+      "credentials": {
+        "evolutionApi": {
+          "id": "NxaxPO0AuCnXtNOB",
+          "name": "All care"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1jQCXAIW4GBC_gg26TO1q477Tn0Grrakss75RYh58_VY",
+          "mode": "list",
+          "cachedResultName": "Data - IA",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jQCXAIW4GBC_gg26TO1q477Tn0Grrakss75RYh58_VY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 117228989,
+          "mode": "list",
+          "cachedResultName": "DATA",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jQCXAIW4GBC_gg26TO1q477Tn0Grrakss75RYh58_VY/edit#gid=117228989"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        3056,
+        -176
+      ],
+      "id": "e5f4493f-559f-4681-913e-95d657efbf91",
+      "name": "Codigos e instrucciones",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "EupiZ1FDPb2r56l4",
+          "name": "Reservas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.remote_jid }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        2912,
+        -704
+      ],
+      "id": "8657eb60-a74c-4cc6-a782-87dac86052b7",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Utiliza esta coleccion para consultar cualquier infromación de los resumenes",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "resumenes_diarios",
+          "mode": "list",
+          "cachedResultName": "resumenes_diarios"
+        },
+        "topK": 5,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        3152,
+        -272
+      ],
+      "id": "64c241f4-b073-4772-a760-4f8e984aaf23",
+      "name": "Qdrant Vector Store",
+      "credentials": {
+        "qdrantApi": {
+          "id": "4OiAz4YzUOX2EPWH",
+          "name": "QdrantApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        3248,
+        -64
+      ],
+      "id": "2481ac76-d066-4beb-bd55-dfb8ce8053ac",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "pSbzIc9P6tbb2NHE",
+          "name": "All care"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "allcare-allday-n8n.el33ri.easypanel.host",
+            "user-agent": "axios/1.10.0",
+            "content-length": "1046",
+            "accept": "application/json, text/plain, */*",
+            "accept-encoding": "gzip, compress, deflate, br",
+            "content-type": "application/json",
+            "x-forwarded-for": "172.18.0.1",
+            "x-forwarded-host": "allcare-allday-n8n.el33ri.easypanel.host",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "7126af32f2c0",
+            "x-real-ip": "172.18.0.1"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "event": "messages.upsert",
+            "instance": "ROBOTINA",
+            "data": {
+              "key": {
+                "remoteJid": "5212211902955@s.whatsapp.net",
+                "fromMe": false,
+                "id": "2A7DE4A1FB27B8DA9BFE",
+                "senderPn": "5212211902955@s.whatsapp.net",
+                "previousRemoteJid": "1142595526871@lid"
+              },
+              "pushName": "Martín Cacho",
+              "status": "DELIVERY_ACK",
+              "message": {
+                "conversation": "Robotina que limpiezas se hicieron hoy 17?",
+                "messageContextInfo": {
+                  "deviceListMetadata": {
+                    "senderKeyHash": "H7xNxtl82sL9xw==",
+                    "senderTimestamp": "1773791557",
+                    "recipientKeyHash": "dQkCRAAOrfomuw==",
+                    "recipientTimestamp": "1772675102"
+                  },
+                  "deviceListMetadataVersion": 2,
+                  "messageSecret": "nY0AxZUZxCm1IZLf3L5lXciChgfAP9CBQRAP7DUejOs="
+                }
+              },
+              "messageType": "conversation",
+              "messageTimestamp": 1773800965,
+              "instanceId": "850ff176-c762-47f0-87b7-8b3420ce22db",
+              "source": "unknown"
+            },
+            "destination": "https://allcare-allday-n8n.el33ri.easypanel.host/webhook/robotina",
+            "date_time": "2026-03-17T23:29:26.033Z",
+            "sender": "5212224718690@s.whatsapp.net",
+            "server_url": "https://allcare-allday-evolution-api.el33ri.easypanel.host",
+            "apikey": "9CBE6F34A0CF-4937-ABBF-FFDF7E6D8A39"
+          },
+          "webhookUrl": "https://allcare-allday-n8n.el33ri.easypanel.host/webhook/robotina",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "¿Es mensaje nuevo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es mensaje nuevo?": {
+      "main": [
+        [
+          {
+            "node": "Extraer Datos Mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Datos Mensaje": {
+      "main": [
+        [
+          {
+            "node": "¿Es Grupo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Grupo?": {
+      "main": [
+        [
+          {
+            "node": "Guardar en raw_messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en raw_messages": {
+      "main": [
+        [
+          {
+            "node": "¿Menciona Robotina?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Menciona Robotina?": {
+      "main": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Robotina Responde": {
+      "main": [
+        [
+          {
+            "node": "Preparar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Respuesta": {
+      "main": [
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cleaning_assignments": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "daily_incidents": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "cleaners_": {
+      "ai_tool": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "properties_": {
+      "ai_tool": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TrackingV2": {
+      "ai_tool": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar texto": {
+      "main": [
+        []
+      ]
+    },
+    "Codigos e instrucciones": {
+      "ai_tool": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Store": {
+      "ai_tool": [
+        [
+          {
+            "node": "Robotina Responde",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "ab87d79b-ac55-49a5-bbe4-2c6f867a5a40",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "25d0ef42be74809d7eb3d26e8d6fe7817528830d86ecd84e5c266f0f146268ed"
+  },
+  "id": "1VeyBC6mzZ6khK8S",
+  "tags": []
+}

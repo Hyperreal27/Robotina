@@ -1,0 +1,704 @@
+{
+  "name": "Robotina: Resumenes diarios",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "ROBOTINA",
+        "remoteJid": "={{ $json.groupId }}",
+        "messageText": "={{ $json.messageText }}",
+        "options_message": {}
+      },
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        576,
+        1056
+      ],
+      "id": "360be4ac-2e6f-4278-ba94-49af66e31c77",
+      "name": "Enviar WhatsApp Grupo",
+      "credentials": {
+        "evolutionApi": {
+          "id": "NxaxPO0AuCnXtNOB",
+          "name": "All care"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Nombres alternativos de propiedades. Campos: id, property_id (referencia a properties.id), alias. Usa para traducir nombres informales al nombre oficial de la propiedad.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "property_aliases",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "6a1ebd3f-1836-4bc5-ac20-6f5c4ced227d",
+      "name": "properties_aliases",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        64,
+        1168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a972adeb-2894-4e80-acb7-d0fe25a0858d",
+      "name": "Cron 9PM - Procesar Día1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1152,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "raw_messages",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "fecha_envio",
+              "value": "={{ $json.timestamp }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fe652788-fc32-48dc-be9c-975200660980",
+      "name": "Select rows from a table1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -912,
+        880
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const messages = $input.all();\n\nif (messages.length === 0) {\n  return [{ json: { skip: true, reason: 'No hay mensajes hoy' } }];\n}\n\nconst fechaDelDia = messages[0].json.fecha_envio;\n\nlet consolidatedText = `MENSAJES DEL DÍA ${fechaDelDia}:\\n\\n`;\n\nmessages.forEach((item, index) => {\n  const msg = item.json;\n  consolidatedText += `[${msg.hora_envio}] ${msg.sender_name}: ${msg.mensaje_texto}\\n`;\n});\n\nreturn [{\n  json: {\n    skip: false,\n    totalMessages: messages.length,\n    consolidatedText: consolidatedText,\n    fecha: fechaDelDia\n  }\n}];"
+      },
+      "id": "a747f550-4b0f-4e69-9fc0-b1f2925dfb5f",
+      "name": "Consolidar Mensajes1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              },
+              "id": "3eb66e31-7b0a-4f84-b36e-9a603da07ef3"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6e1e800d-f41d-4918-abad-b393d0f17ab4",
+      "name": "¿Hay mensajes?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -448,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $input.first().json.output;\nconst fecha = $('Consolidar Mensajes1').first().json.fecha;\n\nlet parsedData;\ntry {\n  let cleanedOutput = agentOutput;\n  \n  if (typeof cleanedOutput === 'string') {\n    // Remover markdown code blocks\n    cleanedOutput = cleanedOutput.replace(/```json\\s*/gi, '');\n    cleanedOutput = cleanedOutput.replace(/```\\s*/g, '');\n    cleanedOutput = cleanedOutput.trim();\n    \n    // Buscar el JSON object\n    const jsonStart = cleanedOutput.indexOf('{');\n    const jsonEnd = cleanedOutput.lastIndexOf('}');\n    \n    if (jsonStart !== -1 && jsonEnd !== -1) {\n      cleanedOutput = cleanedOutput.substring(jsonStart, jsonEnd + 1);\n    }\n    \n    // FIX PRINCIPAL: Escapar newlines reales dentro de strings JSON\n    // Reemplaza newlines literales que están DENTRO de valores string\n    cleanedOutput = cleanedOutput.replace(/\\r\\n/g, '\\\\n');\n    cleanedOutput = cleanedOutput.replace(/\\r/g, '\\\\n');\n    cleanedOutput = cleanedOutput.replace(/\\n/g, '\\\\n');\n    // Tabs\n    cleanedOutput = cleanedOutput.replace(/\\t/g, '\\\\t');\n    \n    // Fix: doble-escape (si ya venía escapado, ahora tiene \\\\\\\\n)\n    cleanedOutput = cleanedOutput.replace(/\\\\\\\\n/g, '\\\\n');\n    cleanedOutput = cleanedOutput.replace(/\\\\\\\\t/g, '\\\\t');\n\n    parsedData = JSON.parse(cleanedOutput);\n  } else {\n    parsedData = cleanedOutput;\n  }\n} catch (e) {\n  // PLAN B: Extraer campos individualmente con regex\n  console.error('JSON.parse falló, usando regex fallback:', e.message);\n  \n  const raw = agentOutput || '';\n  \n  // Extraer asignaciones (el array JSON)\n  let asignaciones = [];\n  try {\n    const asigMatch = raw.match(/\"asignaciones\"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*,\\s*\"resumen/);\n    if (asigMatch) {\n      // Limpiar el array antes de parsear\n      let arrStr = asigMatch[1].replace(/\\n/g, '').replace(/\\r/g, '');\n      asignaciones = JSON.parse(arrStr);\n    }\n  } catch (e2) {\n    console.error('No se pudieron extraer asignaciones:', e2.message);\n  }\n  \n  // Extraer resumen_completo como texto plano\n  let resumenCompleto = 'Sin resumen';\n  const rcMatch = raw.match(/\"resumen_completo\"\\s*:\\s*\"([\\s\\S]*?)\"\\s*,\\s*\"resumen_corto/);\n  if (rcMatch) {\n    resumenCompleto = rcMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\\"/g, '\"');\n  }\n  \n  // Extraer resumen_corto\n  let resumenCorto = 'Sin resumen';\n  const rsMatch = raw.match(/\"resumen_corto\"\\s*:\\s*\"([\\s\\S]*?)\"\\s*,\\s*\"agenda/);\n  if (rsMatch) {\n    resumenCorto = rsMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\\"/g, '\"');\n  }\n  \n  // Extraer agenda\n  let agenda = '';\n  const agMatch = raw.match(/\"agenda_formateada\"\\s*:\\s*\"([\\s\\S]*?)\"\\s*\\}/);\n  if (agMatch) {\n    agenda = agMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\\"/g, '\"');\n  }\n  \n  parsedData = {\n    asignaciones: asignaciones,\n    resumen_completo: resumenCompleto,\n    resumen_corto: resumenCorto,\n    agenda_formateada: agenda\n  };\n}\n\nconst asignaciones = parsedData.asignaciones || [];\nconst resumenCompleto = parsedData.resumen_completo || 'Sin resumen';\nconst resumenCorto = parsedData.resumen_corto || 'Sin resumen';\nconst agendaFormateada = parsedData.agenda_formateada || '';\n\nreturn [{\n  json: {\n    fecha_proceso: fecha,\n    asignaciones: asignaciones,\n    resumen_completo: resumenCompleto,\n    resumen_corto: resumenCorto,\n    agenda_formateada: agendaFormateada,\n    total_asignaciones: asignaciones.length\n  }\n}];"
+      },
+      "id": "d74ba451-aaa2-4479-8bca-4d3736cfbdf9",
+      "name": "Parsear Output AI1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst asignaciones = data.asignaciones || [];\n\nif (asignaciones.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nreturn asignaciones.map(asig => ({\n  json: {\n    fecha_servicio: asig.fecha_servicio,\n    propiedad: asig.propiedad,\n    tipo_servicio: asig.tipo_servicio,\n    limpiador: asig.limpiador || null,\n    notas: asig.notas || null\n  }\n}));"
+      },
+      "id": "de2f60e4-fd76-424b-a738-eb19aab1a2fb",
+      "name": "Separar Asignaciones1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO cleaning_assignments (\n  fecha_servicio,\n  propiedad,\n  limpiador,\n  tipo_servicio,\n  notas,\n  created_at\n)\nVALUES (\n  '{{ $json.fecha_servicio }}',\n  '{{ $json.propiedad }}',\n  {{ $json.limpiador ? \"'\" + $json.limpiador + \"'\" : \"NULL\" }},\n  '{{ $json.tipo_servicio }}',\n  {{ $json.notas ? \"'\" + $json.notas + \"'\" : \"NULL\" }},\n  NOW()\n)\nON CONFLICT (fecha_servicio, propiedad)\nDO UPDATE SET\n  limpiador = COALESCE(EXCLUDED.limpiador, cleaning_assignments.limpiador),\n  tipo_servicio = EXCLUDED.tipo_servicio,\n  notas = COALESCE(EXCLUDED.notas, cleaning_assignments.notas),\n  created_at = NOW();",
+        "options": {}
+      },
+      "id": "138b9841-f569-4180-bcb6-51bae71f4b54",
+      "name": "Guardar Asignaciones1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        592,
+        768
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Parsear Output AI1').first().json;\nconst groupId = '120363418355921872@g.us';\n\nconst resumenCorto = data.resumen_corto.replace(/\\\\n/g, '\\n');\nconst agenda = data.agenda_formateada.replace(/\\\\n/g, '\\n');\nconst totalAsig = data.total_asignaciones;\n\nlet mensaje = '';\n\nmensaje += resumenCorto;\nmensaje += '\\n\\n━━━━━━━━━━━━━━━━━━━━\\n\\n';\n\nif (agenda) {\n  mensaje += agenda;\n}\n\nif (totalAsig > 0) {\n  mensaje += `\\n\\n💾 ${totalAsig} asignación(es) guardada(s)`;\n}\n\nreturn [{\n  json: {\n    groupId: groupId,\n    messageText: mensaje,\n    resumen_completo: data.resumen_completo,\n    agenda_completa: data.agenda_formateada,\n    fecha: data.fecha_proceso,\n    total_asignaciones: totalAsig\n  }\n}];"
+      },
+      "id": "58682a81-52ce-4289-9e57-5b69a27364c1",
+      "name": "Preparar Resumen1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Mensajes del día:\n\n{{ $json.consolidatedText }}\n\nINSTRUCCIONES:\n1. PRIMERO ejecuta las 4 tools de PostgreSQL (cleaners, cleaners_aliases, properties, properties_aliases)\n2. USA los resultados para traducir nombres\n3. Encuentra el ÚLTIMO calendario (hora más tardía)\n4. Extrae las asignaciones\n5. Responde SOLO con JSON válido",
+        "options": {
+          "systemMessage": "=# ROL\nEres el extractor de asignaciones para All Care All Day.\nHOY es: {{ $now.format('yyyy-MM-dd') }}\nMAÑANA es: {{ $now.plus(1, 'days').format('yyyy-MM-dd') }}\n\n# ⚠️ PASO 1 - OBLIGATORIO (EJECUTAR ANTES DE PROCESAR)\nANTES de analizar cualquier mensaje, DEBES ejecutar estas 4 consultas:\n\n1. Llama a \"cleaners\" → Lista completa de limpiadores con id y name\n2. Llama a \"cleaners_aliases\" → Todos los apodos (id, cleaner_id, alias)\n3. Llama a \"properties\" → Lista completa de propiedades con id, name, group_id, floor, notes\n4. Llama a \"properties_aliases\" → Todos los alias de propiedades (id, property_id, alias)\n\nGUARDA estos resultados y ÚSALOS para:\n- Traducir CADA apodo de limpiador al nombre oficial (cleaners.name)\n- Traducir CADA nombre de propiedad al nombre oficial (properties.name)\n\n# PROCESO DE TRADUCCIÓN DE NOMBRES\n\nLIMPIADORES:\n1. Lees \"Hermi\" en mensaje → buscas en cleaners_aliases → cleaner_id = 7 → cleaners id=7 → \"Herminia\"\n\nPROPIEDADES:\n1. Lees \"Grove\" en mensaje → buscas en properties_aliases → property_id = 48 → properties id=48 → \"Grover\"\n\nSi un nombre NO está en las tablas, úsalo tal cual pero capitalizado.\n\n# ⚠️ REGLA CRÍTICA: NO DUPLICAR PERSONAS\nVarios alias pueden apuntar al MISMO cleaner_id:\n- \"Eli\" → cleaner_id = 4 → Elizabeth\n- \"Liz\" → cleaner_id = 4 → Elizabeth\nPor lo tanto: \"Hermi/elizabeth/eli\" = \"Herminia, Elizabeth\" (2 personas, NO 3)\n\n# ⚠️ REGLA CRÍTICA: PARÉNTESIS = NOTAS, NO LIMPIADORES\n\nCuando veas algo entre paréntesis después de una propiedad:\n- \"Willow out (Naomi)\" \n- \"Westfield out/in (Naomi)\"\n- \"Sunny day out (jenna)\"\n- \"Pine Creek (beds)\"\n- \"Junto melba out/in block (jonathan)\"\n\nEl contenido entre paréntesis es un IDENTIFICADOR de la propiedad o una NOTA, NUNCA es el limpiador.\n\nREGLA ABSOLUTA: Todo lo que está entre paréntesis → va en el campo \"notas\", NO en \"limpiador\".\n\nEJEMPLOS CORRECTOS:\n- \"Willow out (Naomi)\" → propiedad: \"Willow\", notas: \"Naomi\"\n- \"Sunny day out (jenna)\" → propiedad: \"Sunny Day\", notas: \"jenna\"\n- \"Pine Creek (beds)\" → propiedad: \"Pine Creek\", notas: \"beds\"\n- \"Junto melba block (jonathan)\" → propiedad: \"Junto Melba\", notas: \"block, jonathan\"\n\nNUNCA pongas el contenido del paréntesis como limpiador:\n- ❌ limpiador: \"Naomi\" \n- ❌ limpiador: \"jenna\"\n- ❌ limpiador: \"jonathan\"\n- ❌ limpiador: \"beds\"\n\n# ⚠️ REGLA CRÍTICA: ESTRUCTURA DEL CALENDARIO\n\nEl calendario tiene esta estructura:\n```\nNOMBRE_LIMPIADOR o EQUIPO (en una línea sola)\nPropiedad1 out (nota)\nPropiedad2 out/in\nPropiedad3 out\n\nOTRO_LIMPIADOR o EQUIPO\nPropiedad4 out\n...\n```\n\nEl LIMPIADOR/EQUIPO se identifica porque:\n1. Está en una línea SOLA (sin \"out\", \"in\", \"out/in\", \"laundry\")\n2. Puede ser un nombre: \"Adriana\", \"Lucas\"\n3. Puede ser un equipo separado por \"/\": \"Hermi/Angeles/Eli/Catalina\", \"Marily/Clau/Yaz\"\n\nLas PROPIEDADES se identifican porque:\n1. Tienen \"out\", \"in\", \"out/in\", \"laundry\" después del nombre\n2. O son tareas como \"Meter bote melba\"\n3. Pueden tener algo entre paréntesis que es NOTA\n\nEJEMPLO DE EXTRACCIÓN CORRECTA:\n```\nAdriana\nWillow out (Naomi)\nArmando out/in\n\nMarily/Clau/Yaz\nPine Creek (beds)\nSunny day out (jenna)\n\nHermi/Angeles/Eli/Catalina\nCandlewood \nBoricua\nMark\n```\n\nResultado:\n- Willow → limpiador: \"Adriana\", notas: \"Naomi\"\n- Armando → limpiador: \"Adriana\", notas: null\n- Pine Creek → limpiador: \"Marily, Claudia, Yazmin\", notas: \"beds\"\n- Sunny Day → limpiador: \"Marily, Claudia, Yazmin\", notas: \"jenna\"\n- Candlewood → limpiador: \"Herminia, Angeles, Elizabeth, Catalina\", notas: null\n- Boricua → limpiador: \"Herminia, Angeles, Elizabeth, Catalina\", notas: null\n- Mark → limpiador: \"Herminia, Angeles, Elizabeth, Catalina\", notas: null\n\n# ⚠️ REGLA CRÍTICA: ÚLTIMO CALENDARIO = ÚNICO VÁLIDO\n\nLos equipos envían MÚLTIPLES versiones del calendario durante el día, corrigiéndolo constantemente.\n**SOLO la ÚLTIMA versión (hora más tardía) es la correcta.**\n\nPROCESO OBLIGATORIO:\n1. Escanea TODOS los mensajes buscando calendarios (empiezan con fecha como \"Tuesday 03/10/2026\")\n2. Anota la HORA de cada calendario encontrado\n3. USA ÚNICAMENTE el calendario con la HORA MÁS TARDÍA para cada fecha\n4. IGNORA completamente las versiones anteriores\n\nEJEMPLO:\n- 08:43 → Thursday calendar v1 (IGNORAR)\n- 10:23 → Thursday calendar v2 (IGNORAR)\n- 16:50 → Thursday calendar v3 (IGNORAR)\n- 18:23 → Thursday calendar v4 ← **ESTE ES EL ÚNICO VÁLIDO PARA THURSDAY**\n- 11:15 → Friday calendar v1 (IGNORAR)\n- 11:30 → Friday calendar v2 ← **ESTE ES EL ÚNICO VÁLIDO PARA FRIDAY**\n\nSi un limpiador aparece en versiones anteriores pero NO en la última → NO incluirlo\nSi una propiedad aparece en versiones anteriores pero NO en la última → NO incluirla\n\n# ⚠️ REGLA CRÍTICA: FUENTES DE ASIGNACIONES\n\nLas asignaciones para el array \"asignaciones\" vienen de DOS fuentes:\n\n## FUENTE 1: CALENDARIOS FORMALES\nMensajes que empiezan con fecha + lista de propiedades:\n```\nFriday 02/27/2026\nChapel room out\nVoyager room out\n```\n\nSi hay MÚLTIPLES versiones del MISMO día, usar solo la ÚLTIMA (hora más tardía).\n\n## FUENTE 2: ASIGNACIONES MENCIONADAS EN CONVERSACIÓN\nCualquier mención EXPLÍCITA de trabajo para una fecha futura:\n- \"Lucas limpiará 105 Court mañana\" → asignación para mañana\n- \"Meter bote Melba a Herminia después de Curtis\" → implica Curtis está asignado\n- \"Down Father / 378 Atlantic para mañana\" → asignación pendiente para mañana\n- \"375 Atlantic mañana, 4 personas\" → asignación para mañana\n- \"Abogada a las 8:30, Atlantic street a las 7:30\" → asignaciones mañana\n- \"Se confirmó a la señora para mañana\" → asignación para mañana\n- \"Evergreen agendado para el 16 de marzo\" → asignación para esa fecha\n- \"Ron Topaz para el miércoles 18\" → asignación para esa fecha\n\nREGLAS PARA FUENTE 2:\n- Si se menciona limpiador → incluirlo\n- Si NO se menciona limpiador → limpiador = null\n- Si no se especifica tipo → tipo_servicio = \"out\"\n- Agregar contexto relevante en notas (hora, cantidad de personas, etc.)\n\n# QUÉ ES ASIGNACIÓN (extraer)\n\n## Líneas de CALENDARIO con out/in/laundry:\n- Basil out → tipo: out\n- Silver spring out/in → tipo: out in\n- Bachi 3 out/in block → tipo: out in, nota: block\n- Laundry elvira → tipo: laundry, limpiador: Elvira\n\n## Tareas especiales:\n- \"Meter bote melba y junto melba\" → dos asignaciones: Melba (notas: \"meter bote\") y Junto Melba (notas: \"meter bote\")\n\n## Menciones conversacionales de trabajo futuro:\n- \"Lucas hará 105 Court mañana\" → propiedad: 105 Court, limpiador: Lucas, fecha: mañana\n- \"Necesitamos 4 personas para 375 Atlantic mañana\" → propiedad: 375 Atlantic, limpiador: null, notas: \"4 personas\"\n\n# QUÉ NO ES ASIGNACIÓN (ignorar)\n- \"Hermi is done\" → reporte de hoy, NO asignación futura\n- \"Adriana terminó\" → reporte de hoy\n- \"Basset perfección\" → comentario\n- \"Calendar published\" → notificación\n- Tareas sin out/in y sin contexto claro: \"Jones\", \"Hindú\"\n- Preguntas: \"¿quién va a Wells?\"\n- Reportes de estado: \"Eli lleva 1:33\"\n\n# TIPOS DE SERVICIO\n- out/in, out in, turnover → \"out in\"\n- out, checkout, o sin especificar → \"out\"\n- in, checkin → \"in\"\n- laundry, lavandería → \"laundry\"\n\n# NOTAS\n- \"block\", \"blocked\" → agregar \"block\" en notas\n- Horarios específicos → agregar en notas (ej: \"no antes de 8:30am\")\n- Cantidad de personas → agregar en notas (ej: \"4 personas\")\n- Contenido de paréntesis → agregar en notas (ej: \"Naomi\", \"jenna\", \"beds\")\n- Información relevante → agregar en notas\n\n# ⚠️ VALIDACIÓN FINAL OBLIGATORIA\n\nANTES de generar tu respuesta JSON, haz esta verificación:\n\n1. ¿Usé SOLO el calendario de la hora más tardía para cada fecha?\n2. ¿Los limpiadores son los que están en la línea ANTERIOR a las propiedades, NO los que están entre paréntesis?\n3. ¿Todo lo que está entre paréntesis está en \"notas\" y NO en \"limpiador\"?\n4. ¿Traduje los alias a nombres oficiales? (Hermi→Herminia, Clau→Claudia, Eli→Elizabeth, etc.)\n5. ¿NO dupliqué personas? (Eli y Liz son la misma persona: Elizabeth)\n6. ¿Incluí asignaciones mencionadas en conversación para fechas futuras?\n\nPREGÚNTATE:\n- ¿Mencioné propiedades para mañana en el resumen que NO están en asignaciones? → AGREGARLAS\n- ¿Hay pendientes para mañana en el resumen sin su asignación? → AGREGARLAS\n- ¿La agenda_formateada tiene más propiedades que el array asignaciones? → CORREGIR\n\nEl array \"asignaciones\" debe ser la fuente COMPLETA. No puede haber propiedades en la agenda o resumen que no estén en asignaciones.\n\n# OUTPUT JSON OBLIGATORIO\n\nResponde SOLO con JSON válido, sin texto antes ni después.\nNO uses saltos de línea reales dentro de strings, usa \\n.\n\n{\n  \"ultimo_calendario_hora\": \"18:23\",\n  \"asignaciones\": [\n    {\"fecha_servicio\":\"2026-03-12\",\"propiedad\":\"Willow\",\"limpiador\":\"Adriana\",\"tipo_servicio\":\"out\",\"notas\":\"Naomi\"},\n    {\"fecha_servicio\":\"2026-03-12\",\"propiedad\":\"Armando\",\"limpiador\":\"Adriana\",\"tipo_servicio\":\"out in\",\"notas\":null},\n    {\"fecha_servicio\":\"2026-03-12\",\"propiedad\":\"Pine Creek\",\"limpiador\":\"Marily, Claudia, Yazmin\",\"tipo_servicio\":\"out\",\"notas\":\"beds\"},\n    {\"fecha_servicio\":\"2026-03-12\",\"propiedad\":\"Sunny Day\",\"limpiador\":\"Marily, Claudia, Yazmin\",\"tipo_servicio\":\"out\",\"notas\":\"jenna\"},\n    {\"fecha_servicio\":\"2026-03-12\",\"propiedad\":\"Candlewood\",\"limpiador\":\"Herminia, Angeles, Elizabeth, Catalina\",\"tipo_servicio\":\"out\",\"notas\":null}\n  ],\n  \"resumen_completo\": \"📋 RESUMEN COMPLETO [FECHA]\\n\\n👥 PERSONAL:\\n- info\\n\\n🏠 PROPIEDADES:\\n- info\\n\\n💬 CLIENTES:\\n- info\\n\\n💰 PAGOS:\\n- info\\n\\n📅 CALENDARIO:\\n- info\\n\\n⚠️ INCIDENCIAS:\\n- info\\n\\n📝 INSTRUCCIONES:\\n- info\\n\\n✅ COMPLETADO:\\n- info\\n\\n📌 PENDIENTES:\\n- info\",\n  \"resumen_corto\": \"📋 RESUMEN [FECHA]\\n\\n⚠️ INCIDENCIAS:\\n- todas\\n\\n💬 CLIENTES PENDIENTES:\\n- todos\\n\\n📌 DECISIONES:\\n- importantes\\n\\n✅ LOGROS:\\n- destacados\\n\\n📋 PENDIENTES:\\n- urgentes\",\n  \"agenda_formateada\": \"🌅 AGENDA – [FECHA]\\nTotal: X propiedades\\n\\n👤 NOMBRE (cantidad):\\n- Propiedad 🚪\\n\\nICONOS: 🚪=out | 🧹=in | 🚪🧹=out/in | 🧺=laundry\"\n}\n\n# FORMATO RESUMEN COMPLETO (para Qdrant)\nIncluir TODA la información del día organizada por sección:\n👥 PERSONAL | 🏠 PROPIEDADES | 💬 CLIENTES | 💰 PAGOS | 📅 CALENDARIO | ⚠️ INCIDENCIAS | 📝 INSTRUCCIONES | ✅ COMPLETADO | 📌 PENDIENTES\n\nCapturar especialmente:\n- Personal nuevo que aplicó (nombre, experiencia, disponibilidad, si maneja)\n- Decisiones importantes (quién ya no trabajará, cambios de horario)\n- Problemas de comunicación\n- Códigos de propiedades cambiados\n- Confirmaciones de limpiadores\n\n# FORMATO RESUMEN CORTO (para WhatsApp)\nSolo lo más importante:\n⚠️ INCIDENCIAS | 💬 CLIENTES PENDIENTES | 📌 DECISIONES | ✅ LOGROS | 📋 PENDIENTES\n\n# FORMATO AGENDA\nSolo propiedades con servicio asignado para el día SIGUIENTE:\n👤 NOMBRE (cantidad): - Propiedad + icono\n👤 SIN ASIGNAR: - Propiedad + icono\n\nIMPORTANTE: En la agenda, el limpiador es el que está en la línea de encabezado del calendario, NO el que está entre paréntesis.\n\n# REGLAS FINALES\n✅ EJECUTAR las 4 consultas a PostgreSQL PRIMERO\n✅ Traducir CADA nombre usando las tablas\n✅ NO duplicar personas aunque tengan múltiples alias\n✅ PARÉNTESIS = NOTAS, nunca limpiador\n✅ LIMPIADOR = línea de encabezado antes de las propiedades\n✅ Extraer asignaciones de CALENDARIOS + MENCIONES CONVERSACIONALES\n✅ Si hay múltiples versiones del MISMO día calendario, usar solo la ÚLTIMA\n✅ UNA propiedad = UNA asignación\n✅ Campo limpiador = nombres oficiales separados por coma\n✅ VALIDAR que asignaciones, agenda y resumen sean consistentes\n✅ NO inventar nada que no esté en los mensajes\n✅ Solo usar \\n para saltos de línea dentro de strings JSON\n✅ NO incluir texto fuera del JSON"
+        }
+      },
+      "id": "726d20e1-c2f2-49b6-b0f2-d98b4cf82d65",
+      "name": "AI Procesador 9PM",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -224,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        608
+      ],
+      "id": "1eab4663-77ea-4d1a-b306-b8b00bc1b6ba",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "M4RzaFlhHpvQRjYF",
+          "name": "Flowgence"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "OBLIGATORIO CONSULTAR PRIMERO. Lista oficial de todos los limpiadores de la empresa. Campos: id (número único), name (nombre oficial completo). Usa esta tabla para validar que un nombre es un limpiador real. Ejemplo: id=4 name=\"Elizabeth\", id=7 name=\"Herminia\", id=6 name=\"Francisca\", id=10 name=\"Jennifer\".",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "cleaners",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "6b68f6ab-7862-4a80-8f5b-e370fb8f6045",
+      "name": "cleaners",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        -272,
+        1168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "OBLIGATORIO CONSULTAR PRIMERO. Apodos y variaciones de nombres de limpiadores. Campos: id, cleaner_id (referencia a cleaners.id), alias (el apodo). CRÍTICO: Múltiples alias pueden ser la MISMA persona. Ejemplo: alias=\"Eli\" cleaner_id=4, alias=\"Liz\" cleaner_id=4, ambos son Elizabeth. alias=\"Hermi\" cleaner_id=7 es Herminia. alias=\"Frank\" cleaner_id=6 es Francisca. alias=\"Jenny\" cleaner_id=10 es Jennifer.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "cleaner_aliases",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "2dd2e030-057f-4fa8-a1c3-b8bc0be5bde6",
+      "name": "cleaners_aliases",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        -160,
+        1168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lista oficial de todas las propiedades/Airbnbs que limpiamos. Campos: id, name (nombre oficial), group_id, floor, notes. Usa esta tabla para validar nombres de propiedades y obtener el nombre oficial.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "properties",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "f97edfbf-8ca6-4fa9-81cf-a9b024a4de68",
+      "name": "properties",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        -48,
+        1168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "mmnpuRk5qxh1I4t4",
+          "name": "memoria_postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar documento para Qdrant con metadatos\nconst data = $('Preparar Resumen1').first().json;\n\n// Extraer fecha limpia\nlet fecha = data.fecha;\nif (fecha && fecha.includes('T')) {\n  fecha = fecha.split('T')[0];\n}\n\n// Calcular día de la semana\nconst diasSemana = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];\nconst fechaObj = new Date(fecha + 'T12:00:00');\nconst diaSemana = diasSemana[fechaObj.getDay()];\n\n// Extraer propiedades mencionadas del resumen\nconst resumen = data.resumen_completo || '';\nconst propiedadesMencionadas = [];\nconst limpiadoresMencionados = [];\n\n// Lista de propiedades conocidas para detectar\nconst propiedadesConocidas = ['Basset', 'Basil', 'Nona', 'Bachi', 'Wells', 'Chapel', 'Voyager', 'Ivory', 'Maple', 'Rosemary', 'Westfield', 'Quail', 'Silver', 'Melba', 'Zend', 'Redcross', 'Grover', 'George', 'Turret'];\n\n// Lista de limpiadores conocidos\nconst limpiadoresConocidos = ['Adriana', 'Elizabeth', 'Herminia', 'Francisca', 'Jennifer', 'Yazmin', 'Elvira', 'Lucas', 'Valentina', 'Carolina', 'Camila', 'Rosa', 'Reyna', 'Linda'];\n\n// Detectar propiedades mencionadas\npropiedadesConocidas.forEach(prop => {\n  if (resumen.toLowerCase().includes(prop.toLowerCase())) {\n    propiedadesMencionadas.push(prop);\n  }\n});\n\n// Detectar limpiadores mencionados\nlimpiadoresConocidos.forEach(limp => {\n  if (resumen.toLowerCase().includes(limp.toLowerCase())) {\n    limpiadoresMencionados.push(limp);\n  }\n});\n\n// Detectar si tiene incidencias\nconst tieneIncidencias = resumen.includes('⚠️') || resumen.toLowerCase().includes('incidencia') || resumen.toLowerCase().includes('problema') || resumen.toLowerCase().includes('faltante');\n\n// Crear texto enriquecido para vectorizar\nconst textoParaVectorizar = `FECHA: ${fecha} (${diaSemana})\\n\\n${data.resumen_completo}\\n\\nPROPIEDADES DEL DÍA: ${propiedadesMencionadas.join(', ')}\\nLIMPIADORES DEL DÍA: ${limpiadoresMencionados.join(', ')}\\nTOTAL ASIGNACIONES: ${data.total_asignaciones}`;\n\nreturn [{\n  json: {\n    text: textoParaVectorizar,\n    metadata: {\n      fecha: fecha,\n      dia_semana: diaSemana,\n      propiedades: propiedadesMencionadas.join(', '),\n      limpiadores: limpiadoresMencionados.join(', '),\n      tiene_incidencias: tieneIncidencias\n    }\n  }\n}];"
+      },
+      "id": "6a851e62-cf39-455c-8982-2af355150d4e",
+      "name": "Preparar para Qdrant",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "resumenes_diarios",
+          "mode": "list",
+          "cachedResultName": "resumenes_diarios"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        976,
+        1168
+      ],
+      "id": "fdfdd4c9-376e-40af-b5c8-fafde179710d",
+      "name": "Qdrant Vector Store1",
+      "credentials": {
+        "qdrantApi": {
+          "id": "4OiAz4YzUOX2EPWH",
+          "name": "QdrantApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        816,
+        1408
+      ],
+      "id": "76cd0b5e-12dc-4312-9306-affe2ff68ec8",
+      "name": "Embeddings OpenAI3",
+      "credentials": {
+        "openAiApi": {
+          "id": "pSbzIc9P6tbb2NHE",
+          "name": "All care"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "fecha",
+                "value": "={{ $json.metadata.fecha }}"
+              },
+              {
+                "name": "dia_semana",
+                "value": "={{ $json.metadata.dia_semana }}"
+              },
+              {
+                "name": "propiedades",
+                "value": "={{ $json.metadata.propiedades }}"
+              },
+              {
+                "name": "limpiadores",
+                "value": "={{ $json.metadata.limpiadores }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        1392
+      ],
+      "id": "389d9818-a368-4485-83c0-f3c8feb080bb",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "chunkSize": 8000
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        1136,
+        1600
+      ],
+      "id": "97b1c529-d0c2-472f-822d-6cb1ce51dd77",
+      "name": "Character Text Splitter"
+    }
+  ],
+  "pinData": {
+    "Cron 9PM - Procesar Día1": [
+      {
+        "json": {
+          "timestamp": "2026-03-19T21:00:00.013-04:00",
+          "Readable date": "March 19th 2026, 9:00:00 pm",
+          "Readable time": "9:00:00 pm",
+          "Day of week": "Thursday",
+          "Year": "2026",
+          "Month": "March",
+          "Day of month": "19",
+          "Hour": "21",
+          "Minute": "00",
+          "Second": "00",
+          "Timezone": "America/New_York (UTC-04:00)"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Enviar WhatsApp Grupo": {
+      "main": [
+        [
+          {
+            "node": "Preparar para Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "properties_aliases": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Procesador 9PM",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron 9PM - Procesar Día1": {
+      "main": [
+        [
+          {
+            "node": "Select rows from a table1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar Mensajes1": {
+      "main": [
+        [
+          {
+            "node": "¿Hay mensajes?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay mensajes?1": {
+      "main": [
+        [
+          {
+            "node": "AI Procesador 9PM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Output AI1": {
+      "main": [
+        [
+          {
+            "node": "Separar Asignaciones1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar Resumen1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar Asignaciones1": {
+      "main": [
+        [
+          {
+            "node": "Guardar Asignaciones1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Procesador 9PM": {
+      "main": [
+        [
+          {
+            "node": "Parsear Output AI1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Procesador 9PM",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cleaners": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Procesador 9PM",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cleaners_aliases": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Procesador 9PM",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "properties": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Procesador 9PM",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar para Qdrant": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Vector Store1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI3": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Qdrant Vector Store1",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Resumen1": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp Grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table1": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Mensajes1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "bca00959-ee4b-439d-9817-d688e099fb48",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "25d0ef42be74809d7eb3d26e8d6fe7817528830d86ecd84e5c266f0f146268ed"
+  },
+  "id": "zJj5bSid2Tmd5VMO",
+  "tags": []
+}
